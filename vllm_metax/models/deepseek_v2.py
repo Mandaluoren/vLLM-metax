@@ -51,7 +51,6 @@ from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
 from vllm.model_executor.layers.fused_moe import (
     FusedMoE,
     GateLinear,
-    RoutingMethodType,
     fused_moe_make_expert_params_mapping,
 )
 from vllm.model_executor.layers.layernorm import LayerNorm, RMSNorm
@@ -615,6 +614,7 @@ class Indexer(nn.Module):
         cache_config: CacheConfig | None,
         topk_indices_buffer: torch.Tensor | None,
         prefix: str = "",
+        is_inplace_rope: bool = False,
     ):
         super().__init__()
         self.vllm_config = vllm_config
@@ -685,6 +685,8 @@ class Indexer(nn.Module):
             self.max_total_seq_len,
             self.topk_indices_buffer,
         )
+
+        self.is_inplace_rope = is_inplace_rope
 
     def forward(
         self, hidden_states: torch.Tensor, qr: torch.Tensor, positions, rotary_emb
@@ -1004,8 +1006,35 @@ class DeepseekV2MLAAttention(nn.Module):
 
         self.is_v32 = hasattr(config, "index_topk")
 
+        # IndexCache config
+        # Refer: https://arxiv.org/abs/2603.12201 for more details.
         _skip_topk = False
+        is_mtp_layer = False
         if self.is_v32:
+            _index_topk_freq = getattr(config, "index_topk_freq", 1)
+            _index_topk_pattern = getattr(config, "index_topk_pattern", None)
+            _index_skip_topk_offset = getattr(config, "index_skip_topk_offset", 2)
+            layer_id = extract_layer_index(prefix)
+
+            if _index_topk_pattern is None:
+                _skip_topk = (
+                    max(layer_id - _index_skip_topk_offset + 1, 0) % _index_topk_freq
+                    != 0
+                )
+            elif 0 <= layer_id < len(_index_topk_pattern):
+                _skip_topk = _index_topk_pattern[layer_id] == "S"
+
+            # The skip pattern only governs backbone layers. MTP/nextn
+            # layers (layer_id >= num_hidden_layers) always build a full
+            # indexer: they compute indices at draft step 0 and toggle
+            # at runtime via set_skip_topk
+            # (index_share_for_mtp_iteration).
+            _num_hidden_layers = getattr(config, "num_hidden_layers", None)
+            is_mtp_layer = (
+                _num_hidden_layers is not None and layer_id >= _num_hidden_layers
+            )
+
+        if self.is_v32 and (not _skip_topk or is_mtp_layer):
             self.indexer_rope_emb = get_rope(
                 qk_rope_head_dim,
                 max_position=max_position_embeddings,
@@ -1021,23 +1050,8 @@ class DeepseekV2MLAAttention(nn.Module):
                 cache_config,
                 topk_indices_buffer,
                 f"{prefix}.indexer",
+                is_inplace_rope=self.indexer_rope_emb.enabled(),
             )
-
-            # IndexCache config
-            # Refer: https://arxiv.org/abs/2603.12201 for more details.
-            _index_topk_freq = getattr(config, "index_topk_freq", 1)
-            _index_topk_pattern = getattr(config, "index_topk_pattern", None)
-            _index_skip_topk_offset = getattr(config, "index_skip_topk_offset", 2)
-            layer_id = extract_layer_index(prefix)
-
-            if _index_topk_pattern is None:
-                _skip_topk = (
-                    max(layer_id - _index_skip_topk_offset + 1, 0) % _index_topk_freq
-                    != 0
-                )
-            elif 0 <= layer_id < len(_index_topk_pattern):
-                _skip_topk = _index_topk_pattern[layer_id] == "S"
-
         else:
             self.indexer_rope_emb = None
             self.indexer = None
@@ -1233,11 +1247,6 @@ class DeepseekV2Model(nn.Module):
         self.config = config
         self.device = current_platform.device_type
 
-        # -----------------------------------------
-        # Note: torch compile needs to eval the
-        #       `getattr` ahead of `forward`
-        self._llama_4_scaling_config = getattr(config, "llama_4_scaling", None)
-
         self.vocab_size = config.vocab_size
         self.is_v32 = hasattr(config, "index_topk")
         if self.is_v32:
@@ -1317,15 +1326,7 @@ class DeepseekV2Model(nn.Module):
             residual = intermediate_tensors["residual"]
 
         # Compute llama 4 scaling once per forward pass if enabled
-        # -----------------------------------------------------
-        # Note: it need to be a explicit variable to make torch
-        #       compile happy, do not make it like:
-        # 
-        #           llama_4_scaling_config = getattr(config, "llama_4_scaling", None)
-        # 
-        #       torch compile might omit the default value of 
-        #       `None` at eval-time.
-        llama_4_scaling_config = self._llama_4_scaling_config
+        llama_4_scaling_config = getattr(self.config, "llama_4_scaling", None)
         llama_4_scaling: torch.Tensor | None
         if llama_4_scaling_config is not None:
             llama_4_scaling = _get_llama_4_scaling(
