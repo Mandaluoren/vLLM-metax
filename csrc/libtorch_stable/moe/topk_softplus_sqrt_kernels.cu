@@ -482,7 +482,7 @@ void topkGatingSoftplusSqrtLauncherHelper(
     auto* kernel =
         &topkGatingSoftplusSqrt<VPT, EXPERTS, WARPS_PER_TB, BYTES_PER_LDG,
                                 WARP_SIZE_PARAM, USE_HASH, IndType, InputType>;
-#ifndef USE_ROCM
+#if !defined(USE_ROCM) && !defined(USE_MACA)
     cudaLaunchConfig_t config = {};
     config.gridDim = num_blocks;
     config.blockDim = block_dim;

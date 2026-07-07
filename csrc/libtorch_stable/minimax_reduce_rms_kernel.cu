@@ -665,6 +665,7 @@ void minimax_reduce_rms_kernel_launcher(MiniMaxReduceRMSParams const& params) {
       (std::min(max_grid, cluster_num * cluster_size) / cluster_size) *
       cluster_size;
 
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   cudaLaunchConfig_t cfg;
   cfg.gridDim = grid_size;
   cfg.blockDim = block_size;
@@ -683,6 +684,11 @@ void minimax_reduce_rms_kernel_launcher(MiniMaxReduceRMSParams const& params) {
 
   STD_CUDA_CHECK(cudaLaunchKernelEx(
       &cfg, minimax_reduce_rms_kernel_lamport<DType, NRanks>, params));
+#else
+  minimax_reduce_rms_kernel_lamport<DType, NRanks>
+      <<<grid_size, block_size, 0, params.stream> > >(params);
+  STD_CUDA_CHECK(cudaGetLastError());
+#endif
 }
 
 template <typename DType, int NRanks, int OriginQDim, int OriginKDim>
@@ -733,6 +739,7 @@ void minimax_reduce_rms_kernel_launcher_float4(
       (std::min(max_grid, cluster_num * cluster_size) / cluster_size) *
       cluster_size;
 
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   cudaLaunchConfig_t cfg;
   cfg.gridDim = grid_size;
   cfg.blockDim = block_size;
@@ -750,6 +757,10 @@ void minimax_reduce_rms_kernel_launcher_float4(
   cfg.numAttrs = SM >= 90 ? 2 : 0;
 
   STD_CUDA_CHECK(cudaLaunchKernelEx(&cfg, kfn, params));
+#else
+  kfn<<<grid_size, block_size, 0, params.stream> > >(params);
+  STD_CUDA_CHECK(cudaGetLastError());
+#endif
 }
 
 template <int NRanks>

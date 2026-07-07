@@ -509,9 +509,9 @@ void per_token_group_quant_8bit_packed(const torch::stable::Tensor& input,
 
   auto dst_type = output_q.scalar_type();
 
-// PDL (Programmatic Dependent Launch) is NVIDIA-only; ROCm/HIP has no
-// equivalent launch attribute, so fall back to a classic launch there.
-#ifndef USE_ROCM
+// PDL (Programmatic Dependent Launch) is NVIDIA-only; ROCm/HIP and MACA have
+// no equivalent launch attribute, so fall back to a classic launch there.
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   #define LAUNCH_REG_KERNEL_INST(T, DST_DTYPE, KX, RY)                         \
     do {                                                                       \
       cudaLaunchConfig_t config = {};                                          \

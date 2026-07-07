@@ -492,7 +492,7 @@ void launchFusedMiniMaxM3(
       static_cast<int>((total_warps + kWarpsPerBlock - 1) / kWarpsPerBlock);
   if (grid == 0) return;
 
-#ifndef USE_ROCM
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   // PDL: enable programmatic stream serialization whenever the hardware
   // supports it (SM90+).  On pre-Hopper GPUs the attribute is unavailable, so
   // leave numAttrs = 0 and launch as a regular kernel via cudaLaunchKernelEx.
@@ -519,7 +519,7 @@ void launchFusedMiniMaxM3(
         eps, rotary_dim, num_tokens, nq, nkv, niq, block_size, kv_s_block,     \
         kv_s_kv, kv_s_token, kv_s_head)
 #else
-  // ROCm: standard kernel launch syntax (no PDL/stream serialization).
+  // ROCm/MACA: standard kernel launch syntax (no PDL/stream serialization).
   // clang-format off
   #define LAUNCH(IS_SPARSE, INSERT, FP8, OUT_T)                              \
     fusedMiniMaxM3QNormRopeKVInsertKernel<scalar_t, cache_t, kv_dt, OUT_T,   \

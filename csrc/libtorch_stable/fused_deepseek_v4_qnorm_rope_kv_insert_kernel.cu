@@ -599,7 +599,7 @@ static void launchFusedDeepseekV4Templated(
   // PDL: enable programmatic stream serialization whenever the hardware
   // supports it (SM90+).  On pre-Hopper GPUs the attribute is unavailable,
   // so leave numAttrs = 0 and launch as a regular kernel.
-#ifndef USE_ROCM
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   static int const sm_version = getSMVersion();
   // Host-side guard: the device kernel body is compiled as a no-op for
   // bf16 on pre-Ampere (sm_70/sm_75) because _typeConvert<BFloat16> is
@@ -640,7 +640,7 @@ static void launchFusedDeepseekV4Templated(
         kv_block_stride);
   }
 #else
-  // ROCm: use standard kernel launch syntax (no PDL/stream serialization)
+  // ROCm/MACA: use standard kernel launch syntax (no PDL/stream serialization).
   // clang-format off
   fusedDeepseekV4QNormRopeKVRopeQuantInsertKernel<scalar_t_in, kNumHeadsQPadded>
       <<<grid, kBlockSize, 0, stream>>>(
@@ -908,7 +908,7 @@ static void launchFullCacheKernel(
       static_cast<int>((total_warps + kWarpsPerBlock - 1) / kWarpsPerBlock);
   auto* kernel =
       fusedDeepseekV4FullCacheKernel<scalar_t_in, STORE_Q_FP8, STORE_KV_FP8>;
-#ifndef USE_ROCM
+#if !defined(USE_ROCM) && !defined(USE_MACA)
   static int const sm_version = getSMVersion();
   STD_TORCH_CHECK(sm_version >= 80, op_name,
                   " requires sm_80+ (Ampere or newer); got sm_", sm_version);

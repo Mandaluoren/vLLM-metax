@@ -172,6 +172,7 @@ void invokeRouterGemmFloatOutput(float* output, T const* mat_a, T const* mat_b,
                                  cudaStream_t stream) {
   constexpr int VPT = 16 / sizeof(T);
   constexpr int kBlockSize = 128;
+#ifndef USE_MACA
   cudaLaunchConfig_t config;
   config.gridDim = kNumExperts;
   config.blockDim = kBlockSize;
@@ -187,6 +188,11 @@ void invokeRouterGemmFloatOutput(float* output, T const* mat_a, T const* mat_b,
       router_gemm_kernel_float_output<T, kBlockSize, VPT, kNumTokens,
                                       kNumExperts, kHiddenDim>,
       output, mat_a, mat_b);
+#else
+  router_gemm_kernel_float_output<T, kBlockSize, VPT, kNumTokens, kNumExperts,
+                                  kHiddenDim>
+      <<<kNumExperts, kBlockSize, 0, stream> > >(output, mat_a, mat_b);
+#endif
 }
 
 // Template instantiations for DEFAULT_NUM_EXPERTS experts

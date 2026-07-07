@@ -32,6 +32,7 @@ void launch_cooperative_cluster(ct::CooperativeTopKParams<TopK>& params,
   cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
                        smem);
 
+  #ifndef USE_MACA
   cudaLaunchConfig_t cfg = {};
   cfg.gridDim = dim3(params.num_rows, CS);
   cfg.blockDim = dim3(hist4096::kBlockSize);
@@ -43,6 +44,11 @@ void launch_cooperative_cluster(ct::CooperativeTopKParams<TopK>& params,
   cfg.numAttrs = 1;
   cfg.attrs = attrs;
   cudaError_t err = cudaLaunchKernelEx(&cfg, kernel, params);
+  #else
+  kernel<<<dim3(params.num_rows, CS), dim3(hist4096::kBlockSize), smem,
+           stream> > >(params);
+  cudaError_t err = cudaGetLastError();
+  #endif
   STD_TORCH_CHECK(err == cudaSuccess,
                   "cooperative_topk launch failed: ", cudaGetErrorString(err));
 }

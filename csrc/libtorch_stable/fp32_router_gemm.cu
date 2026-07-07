@@ -158,6 +158,7 @@ template <typename InputT, int kNumTokens, int kNumExperts, int kHiddenDim>
 void invokeFp32RouterGemm(float* output, InputT const* mat_a,
                           float const* mat_b, cudaStream_t stream) {
   constexpr int kBlockSize = 128;
+#ifndef USE_MACA
   cudaLaunchConfig_t config;
   config.gridDim = kNumExperts;
   config.blockDim = kBlockSize;
@@ -172,6 +173,11 @@ void invokeFp32RouterGemm(float* output, InputT const* mat_a,
                      fp32_router_gemm_kernel<InputT, kBlockSize, kNumTokens,
                                              kNumExperts, kHiddenDim>,
                      output, mat_a, mat_b);
+#else
+  fp32_router_gemm_kernel<InputT, kBlockSize, kNumTokens, kNumExperts,
+                          kHiddenDim>
+      <<<kNumExperts, kBlockSize, 0, stream> > >(output, mat_a, mat_b);
+#endif
 }
 
 // ---------------------------------------------------------------------------

@@ -692,6 +692,11 @@ void invokeFusedAGemm(T* output, T const* mat_a, T const* mat_b, int num_tokens,
                      fused_a_gemm_kernel<batch_size, gemm_m, gemm_k, tile_m,
                                          tile_n, tile_k, stage_cnt>,
                      output, mat_a, mat_b, gemm_n);
+#else
+  fused_a_gemm_kernel<batch_size, gemm_m, gemm_k, tile_m, tile_n, tile_k,
+                      stage_cnt>
+      <<<grid, block_size, smem_bytes, stream>>>(output, mat_a, mat_b, gemm_n);
+#endif
 }
 
 template void invokeFusedAGemm<__nv_bfloat16, 7168, 2112, 8>(
