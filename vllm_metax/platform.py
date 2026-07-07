@@ -245,9 +245,9 @@ class MacaPlatformBase(Platform):
         """Import any platform-specific C kernels."""
         try:
             if mx_envs.USE_PRECOMPILED_KERNEL:
-                import mcoplib._C  # noqa: F401
+                import mcoplib._C_  # noqa: F401
             else:
-                import vllm_metax._C  # noqa: F401
+                import vllm_metax._C_stable_libtorch  # noqa: F401
         except ImportError as e:
             logger.warning(
                 "Failed to import  _C: %r with USE_PRECOMPILED_KERNEL=%s",
@@ -259,7 +259,7 @@ class MacaPlatformBase(Platform):
             if mx_envs.USE_PRECOMPILED_KERNEL:
                 import mcoplib._moe_C  # noqa: F401
             else:
-                import vllm_metax._moe_C  # noqa: F401
+                import vllm_metax._moe_C_stable_libtorch  # noqa: F401
         except ImportError as e:
             logger.warning(
                 "Failed to import _moe_C: %r with USE_PRECOMPILED_KERNEL=%s",

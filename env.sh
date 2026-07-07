@@ -10,5 +10,3 @@ export CUCC_CMAKE_ENTRY=2
 # update PATH
 export PATH=${MACA_PATH}/mxgpu_llvm/bin:${MACA_PATH}/bin:${CUCC_PATH}/tools:${CUCC_PATH}/bin:${PATH}
 export LD_LIBRARY_PATH=${MACA_PATH}/lib:${MACA_PATH}/ompi/lib:${MACA_PATH}/mxgpu_llvm/lib:${LD_LIBRARY_PATH}
-
-export VLLM_INSTALL_PUNICA_KERNELS=1
