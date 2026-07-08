@@ -189,9 +189,12 @@ void invokeRouterGemmFloatOutput(float* output, T const* mat_a, T const* mat_b,
                                       kNumExperts, kHiddenDim>,
       output, mat_a, mat_b);
 #else
+  // avoid ">>>" being formatted to "> > >"
+  // clang-format off
   router_gemm_kernel_float_output<T, kBlockSize, VPT, kNumTokens, kNumExperts,
                                   kHiddenDim>
-      <<<kNumExperts, kBlockSize, 0, stream> > >(output, mat_a, mat_b);
+      <<<kNumExperts, kBlockSize, 0, stream>>>(output, mat_a, mat_b);
+// clang-format on
 #endif
 }
 

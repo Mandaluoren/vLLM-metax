@@ -189,9 +189,12 @@ void invokeRouterGemmBf16Output(__nv_bfloat16* output, T const* mat_a,
                                      kNumExperts, kHiddenDim>,
       output, mat_a, mat_b);
 #else
+  // avoid ">>>" being formatted to "> > >"
+  // clang-format off
   router_gemm_kernel_bf16_output<T, kBlockSize, VPT, kNumTokens, kNumExperts,
                                  kHiddenDim>
-      <<<kNumExperts, kBlockSize, 0, stream> > >(output, mat_a, mat_b);
+      <<<kNumExperts, kBlockSize, 0, stream>>>(output, mat_a, mat_b);
+// clang-format on
 #endif
 }
 

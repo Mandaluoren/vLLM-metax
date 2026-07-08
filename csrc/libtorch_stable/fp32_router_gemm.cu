@@ -174,9 +174,12 @@ void invokeFp32RouterGemm(float* output, InputT const* mat_a,
                                              kNumExperts, kHiddenDim>,
                      output, mat_a, mat_b);
 #else
+  // avoid ">>>" being formatted to "> > >"
+  // clang-format off
   fp32_router_gemm_kernel<InputT, kBlockSize, kNumTokens, kNumExperts,
                           kHiddenDim>
-      <<<kNumExperts, kBlockSize, 0, stream> > >(output, mat_a, mat_b);
+      <<<kNumExperts, kBlockSize, 0, stream>>>(output, mat_a, mat_b);
+// clang-format on
 #endif
 }
 

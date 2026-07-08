@@ -685,9 +685,12 @@ void minimax_reduce_rms_kernel_launcher(MiniMaxReduceRMSParams const& params) {
   STD_CUDA_CHECK(cudaLaunchKernelEx(
       &cfg, minimax_reduce_rms_kernel_lamport<DType, NRanks>, params));
 #else
+  // avoid ">>>" being formatted to "> > >"
+  // clang-format off
   minimax_reduce_rms_kernel_lamport<DType, NRanks>
-      <<<grid_size, block_size, 0, params.stream> > >(params);
+      <<<grid_size, block_size, 0, params.stream>>>(params);
   STD_CUDA_CHECK(cudaGetLastError());
+// clang-format on
 #endif
 }
 
@@ -758,8 +761,10 @@ void minimax_reduce_rms_kernel_launcher_float4(
 
   STD_CUDA_CHECK(cudaLaunchKernelEx(&cfg, kfn, params));
 #else
-  kfn<<<grid_size, block_size, 0, params.stream> > >(params);
+  // clang-format off
+  kfn<<<grid_size, block_size, 0, params.stream>>>(params);
   STD_CUDA_CHECK(cudaGetLastError());
+// clang-format on
 #endif
 }
 
