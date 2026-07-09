@@ -43,15 +43,15 @@ class MacaMoeWNA16Config(MoeWNA16Config):
             return UnquantizedLinearMethod()
         elif isinstance(layer, LinearBase):
             # Avoid circular import
-            from vllm_metax.quant_config.awq import MacaAWQConfig
+            from vllm_metax.quant_config.auto_awq import MacaAutoAWQConfig
             from vllm_metax.quant_config.auto_gptq import MacaAutoGPTQConfig
 
             if self.linear_quant_method == "gptq":
                 return MacaAutoGPTQConfig.from_config(
                     self.full_config
                 ).get_quant_method(layer, prefix)
-            elif self.linear_quant_method == "awq":
-                return MacaAWQConfig.from_config(self.full_config).get_quant_method(
+            elif self.linear_quant_method in ("awq", "awq_marlin"):
+                return MacaAutoAWQConfig.from_config(self.full_config).get_quant_method(
                     layer, prefix
                 )
             else:

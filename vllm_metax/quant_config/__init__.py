@@ -3,7 +3,7 @@
 
 
 from . import (
-    awq,  # noqa: F401
+    auto_awq,  # noqa: F401
     awq_marlin,  # noqa: F401
     compressed_tensors,  # noqa: F401
     auto_gptq,  # noqa: F401

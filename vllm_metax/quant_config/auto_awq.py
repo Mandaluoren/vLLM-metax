@@ -4,17 +4,22 @@
 from typing import Union
 
 import torch
-from vllm.model_executor.layers.fused_moe.layer import FusedMoE
 from vllm.model_executor.layers.linear import (
     LinearBase,
     LinearMethodBase,
     UnquantizedLinearMethod,
 )
-from vllm.model_executor.layers.quantization.awq import AWQConfig
-from vllm.model_executor.layers.quantization.awq import (
-    AWQLinearMethod as vllm_AWQLinearMethod,
+from vllm.model_executor.layers.fused_moe import (
+    RoutedExperts,
 )
-from vllm.model_executor.layers.quantization.awq import is_layer_skipped, logger
+from vllm_metax.customized.layers.unquantized_fused_moe_method import (
+    UnquantizedFusedMoEMethod,
+)
+from vllm.model_executor.layers.quantization.auto_awq import AutoAWQConfig
+from vllm.model_executor.layers.quantization.auto_awq import (
+    AutoAWQLinearMethod as vllm_AutoAWQLinearMethod,
+)
+from vllm.model_executor.layers.quantization.auto_awq import is_layer_skipped
 from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
 from vllm.utils.torch_utils import direct_register_custom_op
 
@@ -23,7 +28,8 @@ from vllm.model_executor.layers.quantization import register_quantization_config
 
 
 @register_quantization_config("awq")
-class MacaAWQConfig(AWQConfig):
+@register_quantization_config("auto_awq")
+class MacaAutoAWQConfig(AutoAWQConfig):
     def get_supported_act_dtypes(self):
         return [torch.half, torch.bfloat16]
 
@@ -38,24 +44,18 @@ class MacaAWQConfig(AWQConfig):
                 skip_with_substr=True,
             ):
                 return UnquantizedLinearMethod()
-            return AWQLinearMethod(self)
-        elif isinstance(layer, FusedMoE):
+            return AutoAWQLinearMethod(self)
+        elif isinstance(layer, RoutedExperts):
+            if is_layer_skipped(
+                prefix,
+                getattr(self, "modules_to_not_convert", []),
+                skip_with_substr=True,
+            ):
+                return UnquantizedFusedMoEMethod(layer.moe_config)
             # Lazy import to avoid circular import.
             from vllm_metax.quant_config.moe_wna16 import MacaMoeWNA16Config
 
-            logger.debug(
-                f"Layer '{prefix}' is not supported by Maca AWQMoeMarlin. "
-                "Falling back to Maca Moe WNA16 kernels."
-            )
-            config = {
-                "quant_method": "awq",
-                "bits": self.weight_bits,
-                "group_size": self.group_size,
-                "zero_point": self.zero_point,
-                "lm_head": False,
-                "modules_to_not_convert": self.modules_to_not_convert,
-            }
-            return MacaMoeWNA16Config.from_config(config).get_quant_method(
+            return MacaMoeWNA16Config.from_config(self.full_config).get_quant_method(
                 layer, prefix
             )
         return None
@@ -64,7 +64,7 @@ class MacaAWQConfig(AWQConfig):
 # -----------------------------------------------------------
 # Note: We need to keep the method name **the same** as vLLM's
 # -----------------------------------------------------------
-class AWQLinearMethod(vllm_AWQLinearMethod):
+class AutoAWQLinearMethod(vllm_AutoAWQLinearMethod):
     """Linear method for AWQ.
 
     Args:
