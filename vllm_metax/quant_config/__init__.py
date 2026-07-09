@@ -4,7 +4,6 @@
 
 from . import (
     auto_awq,  # noqa: F401
-    awq_marlin,  # noqa: F401
     compressed_tensors,  # noqa: F401
     auto_gptq,  # noqa: F401
     moe_wna16,  # noqa: F401
