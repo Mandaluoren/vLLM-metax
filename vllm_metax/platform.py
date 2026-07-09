@@ -170,6 +170,7 @@ class MacaPlatformBase(Platform):
     ]
 
     supported_quantization: list[str] = [
+        "auto_awq",
         "awq",
         "auto_gptq",
         "gptq",
