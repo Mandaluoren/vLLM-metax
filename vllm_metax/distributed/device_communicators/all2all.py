@@ -2,143 +2,19 @@
 # 2026 - Modified by MetaX Integrated Circuits (Shanghai) Co., Ltd. All Rights Reserved.
 import torch
 
-from vllm.distributed import get_dp_group, get_ep_group, get_tp_group
+from typing import Any
+from vllm.distributed import get_dp_group, get_ep_group
 from vllm.forward_context import get_forward_context
 
 from vllm.distributed.device_communicators.base_device_communicator import (
     All2AllManagerBase,
 )
 from vllm.platforms import current_platform
+import vllm.envs as envs
 
-
-class CoArAll2AllManager(All2AllManagerBase):
-    """
-    A opt implementation of all2all communication.
-    It uses all-reduce under the hood, which is not
-    efficient at all. The main purpose is for testing and
-    debugging.
-    """
-
-    def __init__(self, cpu_group):
-        super().__init__(cpu_group)
-
-    def dispatch_router_logits(
-        self,
-        hidden_states: torch.Tensor,
-        router_logits: torch.Tensor,
-        is_sequence_parallel: bool = False,
-        extra_tensors: list[torch.Tensor] | None = None,
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]
-    ):
-        """
-        Gather hidden_states and router_logits from all dp ranks.
-        """
-        dp_metadata = get_forward_context().dp_metadata
-        assert dp_metadata is not None
-        sizes = dp_metadata.get_chunk_sizes_across_dp_rank()
-        assert sizes is not None
-        dist_group = get_ep_group() if is_sequence_parallel else get_dp_group()
-        assert sizes[dist_group.rank_in_group] == hidden_states.shape[0]
-
-        tensors_to_gather = [hidden_states, router_logits]
-        if extra_tensors is not None:
-            tensors_to_gather.extend(extra_tensors)
-
-        if len(set(sizes)) <= 1 and hidden_states.shape[0] <= 512:
-            gathered_tensors = []
-            for tensors in tensors_to_gather:
-                gathered_tensors.append(dist_group.all_gather(tensors, dim=0))
-        else:
-            gathered_tensors = dist_group.all_gatherv(
-                tensors_to_gather,
-                dim=0,
-                sizes=sizes,
-            )
-
-        if extra_tensors is not None:
-            return (gathered_tensors[0], gathered_tensors[1], gathered_tensors[2:])
-        return gathered_tensors[0], gathered_tensors[1]
-
-    def dispatch(
-        self,
-        hidden_states: torch.Tensor,
-        topk_weights: torch.Tensor,
-        topk_ids: torch.Tensor,
-        is_sequence_parallel: bool = False,
-        extra_tensors: list[torch.Tensor] | None = None,
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[torch.Tensor]]
-    ):
-        """
-        Gather hidden_states and router_logits from all dp ranks.
-        """
-        dp_metadata = get_forward_context().dp_metadata
-        assert dp_metadata is not None
-        sizes = dp_metadata.get_chunk_sizes_across_dp_rank()
-        assert sizes is not None
-        dist_group = get_ep_group() if is_sequence_parallel else get_dp_group()
-        assert sizes[dist_group.rank_in_group] == hidden_states.shape[0]
-
-        tensors_to_gather = [hidden_states, topk_weights, topk_ids]
-        if extra_tensors is not None:
-            tensors_to_gather.extend(extra_tensors)
-
-        if len(set(sizes)) <= 1 and hidden_states.shape[0] <= 512:
-            gathered_tensors = []
-            for tensors in tensors_to_gather:
-                gathered_tensors.append(dist_group.all_gather(tensors, dim=0))
-        else:
-            gathered_tensors = dist_group.all_gatherv(
-                tensors_to_gather,
-                dim=0,
-                sizes=sizes,
-            )
-
-        hidden_states = gathered_tensors[0]
-        topk_weights = gathered_tensors[1]
-        topk_ids = gathered_tensors[2]
-
-        if extra_tensors is None:
-            return hidden_states, topk_weights, topk_ids
-
-        return hidden_states, topk_weights, topk_ids, gathered_tensors[3:]
-
-    def combine(
-        self, hidden_states: torch.Tensor, is_sequence_parallel: bool = False
-    ) -> torch.Tensor:
-        """
-        Reduce hidden_states from all ranks.
-        """
-        ep_rank = self.rank if is_sequence_parallel else self.dp_rank
-
-        dp_metadata = get_forward_context().dp_metadata
-        assert dp_metadata is not None
-        sp_size = self.tp_group.world_size if is_sequence_parallel else 1
-        cu_tokens_across_sp_cpu = dp_metadata.cu_tokens_across_sp(sp_size)
-
-        total_num_tokens = cu_tokens_across_sp_cpu[-1].item()
-        if total_num_tokens < 2048:
-            sizes = dp_metadata.get_chunk_sizes_across_dp_rank()
-            assert sizes is not None
-            dist_group = get_ep_group() if is_sequence_parallel else get_dp_group()
-            hidden_states = dist_group.reduce_scatterv(
-                hidden_states, dim=0, sizes=sizes
-            )
-            if not is_sequence_parallel:
-                hidden_states = get_tp_group().all_reduce(hidden_states)
-        else:
-            start = 0 if ep_rank == 0 else cu_tokens_across_sp_cpu[ep_rank - 1]
-            end = cu_tokens_across_sp_cpu[ep_rank]
-
-            all_hidden_states = get_ep_group().all_reduce(hidden_states)
-            hidden_states = all_hidden_states[start:end, :]
-        return hidden_states
-
-    def destroy(self):
-        pass
+from vllm.distributed.device_communicators.all2all import (
+    DeepEPLLAll2AllManager,
+)
 
 
 class MacaAgRsAll2AllManager(All2AllManagerBase):
@@ -282,3 +158,61 @@ class MacaAgRsAll2AllManager(All2AllManagerBase):
 
     def destroy(self):
         pass
+
+
+class MacaDeepEPLLAll2AllManager(DeepEPLLAll2AllManager):
+    def _make_all2all_kwargs(
+        self,
+        max_num_tokens_per_dp_rank: int,
+        token_hidden_size: int,
+        num_ep_ranks: int,
+        num_global_experts: int,
+        num_local_experts: int,
+    ) -> dict[Any, Any]:
+        """
+        max_num_tokens_per_dp_rank: the maximum number of tokens a DP rank
+            can dispatch all the ranks must hold the same value.
+        token_hidden_size: the hidden dimension of each token.
+        num_ep_ranks: the number of EP group ranks.
+        num_global_experts: Number of experts in the model.
+        num_local_experts: Number of experts in an EP rank.
+        """
+        import os
+
+        assert os.getenv("MXSHMEM_LIB_PATH", None) is not None, (
+            "please setting MXSHMEM_LIB_PATH and add ${MXSHMEM_LIB_PATH}/lib into LD_LIBRARY_PATH"
+        )
+
+        import deep_ep  # type: ignore[import-not-found]
+
+        # Defaults for internode and intranode are taken from DeepEP tests.
+        num_nvl_bytes: int = envs.VLLM_DEEPEP_BUFFER_SIZE_MB * 1024 * 1024  # noqa: F841
+        num_qps_per_rank: int = num_local_experts
+        num_rdma_bytes: int = deep_ep.Buffer.get_low_latency_rdma_size_hint(
+            num_max_dispatch_tokens_per_rank=max_num_tokens_per_dp_rank,
+            hidden=token_hidden_size,
+            num_ranks=num_ep_ranks,
+            num_experts=num_global_experts,
+        )
+
+        assert num_rdma_bytes is not None
+
+        return dict(
+            group=self.cpu_group,
+            # /------------------- Metax Modification -----------------------\
+            # num_nvl_bytes=num_nvl_bytes,
+            # \------------------- Metax Modification -----------------------/
+            num_rdma_bytes=num_rdma_bytes,
+            low_latency_mode=True,
+            num_qps_per_rank=num_qps_per_rank,
+            # /------------------- Metax Modification -----------------------\
+            # allow_nvlink_for_low_latency_mode=True,
+            # allow_mnnvl=envs.VLLM_DEEPEP_LOW_LATENCY_USE_MNNVL,
+            # \------------------- Metax Modification -----------------------/
+        )
+
+    def destroy(self):
+        with self.handle_cache._lock:
+            for _, handle in self.handle_cache._cache.items():
+                handle.destroy()
+            self.handle_cache._cache.clear()

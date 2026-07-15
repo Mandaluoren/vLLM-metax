@@ -37,19 +37,26 @@ class MacaCommunicator(CudaCommunicator):
             tcp_store_group,
         )
         # /------------------------  Metax Modification -------------------------\
-        if (
-            self.use_all2all
-            and mx_envs.VLLM_METAX_OPTIMIZED_DP_ALL2ALL
-            and self.all2all_backend == "allgather_reducescatter"
-        ):
-            from vllm_metax.distributed.device_communicators.all2all import (
-                MacaAgRsAll2AllManager,
-            )
+        if self.use_all2all:
+            if (
+                mx_envs.VLLM_METAX_OPTIMIZED_DP_ALL2ALL
+                and self.all2all_backend == "allgather_reducescatter"
+            ):
+                from .all2all import MacaAgRsAll2AllManager
 
-            self.all2all_manager = MacaAgRsAll2AllManager(self.cpu_group)
-            logger.info_once(
-                "Maca switch all2all_backend to %s all2all manager for better performance.",
-                self.all2all_manager.__class__.__name__,
-                scope="global",
-            )
+                self.all2all_manager = MacaAgRsAll2AllManager(self.cpu_group)
+                logger.info_once(
+                    "Maca override AgRsAll2AllManager to %s for better performance.",
+                    self.all2all_manager.__class__.__name__,
+                )
+            elif self.use_all2all and self.all2all_backend == "deepep_low_latency":
+                from .all2all import MacaDeepEPLLAll2AllManager
+
+                self.all2all_manager = MacaDeepEPLLAll2AllManager(
+                    self.cpu_group, tcp_store_group
+                )
+                logger.info_once(
+                    "Maca override DeepEPLLAll2AllManager to %s for better performance.",
+                    self.all2all_manager.__class__.__name__,
+                )
         # \------------------------  Metax Modification -------------------------/
