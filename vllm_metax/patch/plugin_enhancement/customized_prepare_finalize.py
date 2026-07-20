@@ -32,7 +32,7 @@ if current_platform.is_cuda_alike():
         )
 
 
-def maybe_make_prepare_finalize(
+def maca_maybe_make_prepare_finalize(
     moe: FusedMoEConfig,
     quant_config: FusedMoEQuantConfig | None,
     routing_tables: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
@@ -125,3 +125,8 @@ def maybe_make_prepare_finalize(
         )
 
     return prepare_finalize
+
+
+from vllm.model_executor.layers.fused_moe import all2all_utils
+
+all2all_utils.maybe_make_prepare_finalize = maca_maybe_make_prepare_finalize
